@@ -124,7 +124,7 @@ impl BartVocabResources {
     /// Shared under MIT license by the Facebook AI Research Fairseq team at <https://github.com/pytorch/fairseq>. Modified with conversion to C-array format.
     pub const BART_CNN: (&'static str, &'static str) = (
         "bart-cnn/vocab",
-        "https://huggingface.co/roberta-large/resolve/main/vocab.json",
+        "https://huggingface.co/facebook/bart-large-cnn/resolve/main/vocab.json",
     );
     /// Shared under MIT license by the Facebook AI Research Fairseq team at <https://github.com/pytorch/fairseq>. Modified with conversion to C-array format.
     pub const BART_XSUM: (&'static str, &'static str) = (
@@ -157,7 +157,7 @@ impl BartMergesResources {
     /// Shared under MIT license by the Facebook AI Research Fairseq team at <https://github.com/pytorch/fairseq>. Modified with conversion to C-array format.
     pub const BART_CNN: (&'static str, &'static str) = (
         "bart-cnn/merges",
-        "https://huggingface.co/roberta-large/resolve/main/merges.txt",
+        "https://huggingface.co/facebook/bart-large-cnn/resolve/main/merges.txt",
     );
     /// Shared under MIT license by the Facebook AI Research Fairseq team at <https://github.com/pytorch/fairseq>. Modified with conversion to C-array format.
     pub const BART_XSUM: (&'static str, &'static str) = (

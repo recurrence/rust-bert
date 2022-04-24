@@ -4,7 +4,7 @@ use rust_bert::gpt_neo::{
 };
 use rust_bert::pipelines::common::ModelType;
 use rust_bert::pipelines::text_generation::{TextGenerationConfig, TextGenerationModel};
-use rust_bert::resources::{RemoteResource, Resource};
+use rust_bert::resources::{RemoteResource, ResourceProvider};
 use rust_bert::Config;
 use rust_tokenizers::tokenizer::{Gpt2Tokenizer, Tokenizer, TruncationStrategy};
 use tch::{nn, Device, Tensor};
@@ -12,16 +12,16 @@ use tch::{nn, Device, Tensor};
 #[test]
 fn gpt_neo_lm() -> anyhow::Result<()> {
     //    Resources paths
-    let config_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let config_resource = Box::new(RemoteResource::from_pretrained(
         GptNeoConfigResources::GPT_NEO_125M,
     ));
-    let vocab_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let vocab_resource = Box::new(RemoteResource::from_pretrained(
         GptNeoVocabResources::GPT_NEO_125M,
     ));
-    let merges_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let merges_resource = Box::new(RemoteResource::from_pretrained(
         GptNeoMergesResources::GPT_NEO_125M,
     ));
-    let weights_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let weights_resource = Box::new(RemoteResource::from_pretrained(
         GptNeoModelResources::GPT_NEO_125M,
     ));
     let config_path = config_resource.get_local_path()?;
@@ -72,7 +72,7 @@ fn gpt_neo_lm() -> anyhow::Result<()> {
         .get(-1)
         .argmax(-1, true)
         .int64_value(&[0]);
-    let next_word = tokenizer.decode(vec![next_word_id], true, true);
+    let next_word = tokenizer.decode(&[next_word_id], true, true);
     let next_score = model_output
         .lm_logits
         .get(0)
@@ -94,7 +94,7 @@ fn gpt_neo_lm() -> anyhow::Result<()> {
     );
     assert_eq!(
         model_output.all_attentions.as_ref().unwrap()[1].size(),
-        vec![1, 1, 12, 4, 260]
+        vec![1, 12, 4, 4]
     );
 
     assert!(model_output.all_hidden_states.is_some());
@@ -109,16 +109,16 @@ fn gpt_neo_lm() -> anyhow::Result<()> {
 #[test]
 fn test_generation_gpt_neo() -> anyhow::Result<()> {
     //    Resources paths
-    let config_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let config_resource = Box::new(RemoteResource::from_pretrained(
         GptNeoConfigResources::GPT_NEO_125M,
     ));
-    let vocab_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let vocab_resource = Box::new(RemoteResource::from_pretrained(
         GptNeoVocabResources::GPT_NEO_125M,
     ));
-    let merges_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let merges_resource = Box::new(RemoteResource::from_pretrained(
         GptNeoMergesResources::GPT_NEO_125M,
     ));
-    let model_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let model_resource = Box::new(RemoteResource::from_pretrained(
         GptNeoModelResources::GPT_NEO_125M,
     ));
 
@@ -132,7 +132,7 @@ fn test_generation_gpt_neo() -> anyhow::Result<()> {
         min_length: 10,
         max_length: 32,
         do_sample: false,
-        early_stopping: false,
+        early_stopping: true,
         num_beams: 4,
         num_return_sequences: 1,
         device: Device::Cpu,

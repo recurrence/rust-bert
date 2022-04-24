@@ -19,22 +19,22 @@ use rust_bert::gpt_neo::{
 };
 use rust_bert::pipelines::common::ModelType;
 use rust_bert::pipelines::text_generation::{TextGenerationConfig, TextGenerationModel};
-use rust_bert::resources::{RemoteResource, Resource};
+use rust_bert::resources::RemoteResource;
 use tch::Device;
 
 fn main() -> anyhow::Result<()> {
     //    Set-up model resources
-    let config_resource = Resource::Remote(RemoteResource::from_pretrained(
-        GptNeoConfigResources::GPT_NEO_1_3B,
+    let config_resource = Box::new(RemoteResource::from_pretrained(
+        GptNeoConfigResources::GPT_NEO_125M,
     ));
-    let vocab_resource = Resource::Remote(RemoteResource::from_pretrained(
-        GptNeoVocabResources::GPT_NEO_1_3B,
+    let vocab_resource = Box::new(RemoteResource::from_pretrained(
+        GptNeoVocabResources::GPT_NEO_125M,
     ));
-    let merges_resource = Resource::Remote(RemoteResource::from_pretrained(
-        GptNeoMergesResources::GPT_NEO_1_3B,
+    let merges_resource = Box::new(RemoteResource::from_pretrained(
+        GptNeoMergesResources::GPT_NEO_125M,
     ));
-    let model_resource = Resource::Remote(RemoteResource::from_pretrained(
-        GptNeoModelResources::GPT_NEO_1_3B,
+    let model_resource = Box::new(RemoteResource::from_pretrained(
+        GptNeoModelResources::GPT_NEO_125M,
     ));
     let generate_config = TextGenerationConfig {
         model_type: ModelType::GPTNeo,
@@ -52,7 +52,8 @@ fn main() -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    let model = TextGenerationModel::new(generate_config)?;
+    let mut model = TextGenerationModel::new(generate_config)?;
+    model.set_device(Device::cuda_if_available());
 
     let input_context_1 = "It was a very nice and sunny";
     let input_context_2 = "It was a gloom winter night, and";

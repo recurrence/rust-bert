@@ -3,7 +3,7 @@ use rust_bert::mbart::{
 };
 use rust_bert::pipelines::common::ModelType;
 use rust_bert::pipelines::translation::{Language, TranslationModelBuilder};
-use rust_bert::resources::{RemoteResource, Resource};
+use rust_bert::resources::{RemoteResource, ResourceProvider};
 use rust_bert::Config;
 use rust_tokenizers::tokenizer::{MBart50Tokenizer, Tokenizer, TruncationStrategy};
 use tch::{nn, Device, Tensor};
@@ -11,13 +11,13 @@ use tch::{nn, Device, Tensor};
 #[test]
 fn mbart_lm_model() -> anyhow::Result<()> {
     //    Resources paths
-    let config_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let config_resource = Box::new(RemoteResource::from_pretrained(
         MBartConfigResources::MBART50_MANY_TO_MANY,
     ));
-    let vocab_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let vocab_resource = Box::new(RemoteResource::from_pretrained(
         MBartVocabResources::MBART50_MANY_TO_MANY,
     ));
-    let weights_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let weights_resource = Box::new(RemoteResource::from_pretrained(
         MBartModelResources::MBART50_MANY_TO_MANY,
     ));
     let config_path = config_resource.get_local_path()?;
@@ -73,9 +73,9 @@ fn mbart_translation() -> anyhow::Result<()> {
     let source_sentence = "This sentence will be translated in multiple languages.";
 
     let mut outputs = Vec::new();
-    outputs.extend(model.translate([source_sentence], Language::English, Language::French)?);
-    outputs.extend(model.translate([source_sentence], Language::English, Language::Spanish)?);
-    outputs.extend(model.translate([source_sentence], Language::English, Language::Hindi)?);
+    outputs.extend(model.translate(&[source_sentence], Language::English, Language::French)?);
+    outputs.extend(model.translate(&[source_sentence], Language::English, Language::Spanish)?);
+    outputs.extend(model.translate(&[source_sentence], Language::English, Language::Hindi)?);
 
     assert_eq!(outputs.len(), 3);
     assert_eq!(

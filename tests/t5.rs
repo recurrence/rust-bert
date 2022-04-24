@@ -1,20 +1,16 @@
 use rust_bert::pipelines::common::ModelType;
 use rust_bert::pipelines::summarization::{SummarizationConfig, SummarizationModel};
 use rust_bert::pipelines::translation::{Language, TranslationConfig, TranslationModel};
-use rust_bert::resources::{RemoteResource, Resource};
+use rust_bert::resources::RemoteResource;
 use rust_bert::t5::{T5ConfigResources, T5ModelResources, T5VocabResources};
 use tch::Device;
 
 #[test]
 fn test_translation_t5() -> anyhow::Result<()> {
-    let model_resource =
-        Resource::Remote(RemoteResource::from_pretrained(T5ModelResources::T5_SMALL));
-    let config_resource =
-        Resource::Remote(RemoteResource::from_pretrained(T5ConfigResources::T5_SMALL));
-    let vocab_resource =
-        Resource::Remote(RemoteResource::from_pretrained(T5VocabResources::T5_SMALL));
-    let merges_resource =
-        Resource::Remote(RemoteResource::from_pretrained(T5VocabResources::T5_SMALL));
+    let model_resource = RemoteResource::from_pretrained(T5ModelResources::T5_SMALL);
+    let config_resource = RemoteResource::from_pretrained(T5ConfigResources::T5_SMALL);
+    let vocab_resource = RemoteResource::from_pretrained(T5VocabResources::T5_SMALL);
+    let merges_resource = RemoteResource::from_pretrained(T5VocabResources::T5_SMALL);
 
     let source_languages = [
         Language::English,
@@ -44,9 +40,9 @@ fn test_translation_t5() -> anyhow::Result<()> {
     let source_sentence = "This sentence will be translated in multiple languages.";
 
     let mut outputs = Vec::new();
-    outputs.extend(model.translate([source_sentence], Language::English, Language::French)?);
-    outputs.extend(model.translate([source_sentence], Language::English, Language::German)?);
-    outputs.extend(model.translate([source_sentence], Language::English, Language::Romanian)?);
+    outputs.extend(model.translate(&[source_sentence], Language::English, Language::French)?);
+    outputs.extend(model.translate(&[source_sentence], Language::English, Language::German)?);
+    outputs.extend(model.translate(&[source_sentence], Language::English, Language::Romanian)?);
 
     assert_eq!(outputs.len(), 3);
     assert_eq!(
@@ -70,18 +66,10 @@ fn test_summarization_t5() -> anyhow::Result<()> {
     //    Set-up translation model
     let summarization_config = SummarizationConfig {
         model_type: ModelType::T5,
-        model_resource: Resource::Remote(RemoteResource::from_pretrained(
-            T5ModelResources::T5_SMALL,
-        )),
-        config_resource: Resource::Remote(RemoteResource::from_pretrained(
-            T5ConfigResources::T5_SMALL,
-        )),
-        vocab_resource: Resource::Remote(RemoteResource::from_pretrained(
-            T5VocabResources::T5_SMALL,
-        )),
-        merges_resource: Resource::Remote(RemoteResource::from_pretrained(
-            T5VocabResources::T5_SMALL,
-        )),
+        model_resource: Box::new(RemoteResource::from_pretrained(T5ModelResources::T5_SMALL)),
+        config_resource: Box::new(RemoteResource::from_pretrained(T5ConfigResources::T5_SMALL)),
+        vocab_resource: Box::new(RemoteResource::from_pretrained(T5VocabResources::T5_SMALL)),
+        merges_resource: Box::new(RemoteResource::from_pretrained(T5VocabResources::T5_SMALL)),
         min_length: 30,
         max_length: 200,
         early_stopping: true,

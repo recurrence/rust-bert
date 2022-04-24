@@ -320,7 +320,7 @@ impl MobileBertModel {
     ///
     /// * `p` - Variable store path for the root of the MobileBERT model
     /// * `config` - `MobileBertConfig` object defining the model architecture and decoder status
-    /// * `add_poling_layer` - boolean flag indicating if a pooling layer should be added after the encoder
+    /// * `add_pooling_layer` - boolean flag indicating if a pooling layer should be added after the encoder
     ///
     /// # Example
     ///
@@ -457,7 +457,6 @@ impl MobileBertModel {
                 ));
             }
         };
-        let attention_mask: Tensor = (attention_mask.ones_like() - attention_mask) * -10000.0;
 
         let token_type_ids =
             token_type_ids.unwrap_or_else(|| calc_token_type_ids.as_ref().unwrap());
@@ -469,6 +468,9 @@ impl MobileBertModel {
             input_embeds,
             train,
         )?;
+
+        let attention_mask: Tensor = ((attention_mask.ones_like() - attention_mask) * -10000.0)
+            .to_kind(embedding_output.kind());
 
         let encoder_output =
             self.encoder

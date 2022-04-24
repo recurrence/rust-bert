@@ -408,13 +408,15 @@ impl Gpt2Model {
             .unsqueeze(0),
         };
 
-        let attention_mask: Option<Tensor> = attention_mask.as_ref().map(|value| {
-            (value
+        let attention_mask: Option<Tensor> = attention_mask.map(|value| {
+            let attention_mask = value
                 .view((input_embeddings.size()[0], -1))
                 .unsqueeze(1)
                 .unsqueeze(2)
-                - 1.0)
-                * 10000.0
+                .to_kind(input_embeddings.kind());
+
+            let attention_mask: Tensor = (1.0 - attention_mask) * (-10000.0);
+            attention_mask.to_kind(input_embeddings.kind())
         });
 
         let position_embeds = position_ids.apply(&self.wpe);
@@ -681,14 +683,9 @@ impl GPT2Generator {
     /// # }
     /// ```
     pub fn new(generate_config: GenerateConfig) -> Result<GPT2Generator, RustBertError> {
-        let config_path = generate_config.config_resource.get_local_path()?;
         let vocab_path = generate_config.vocab_resource.get_local_path()?;
         let merges_path = generate_config.merges_resource.get_local_path()?;
-        let weights_path = generate_config.model_resource.get_local_path()?;
-        let device = generate_config.device;
 
-        generate_config.validate();
-        let mut var_store = nn::VarStore::new(device);
         let tokenizer = TokenizerOption::from_file(
             ModelType::GPT2,
             vocab_path.to_str().unwrap(),
@@ -697,13 +694,28 @@ impl GPT2Generator {
             None,
             None,
         )?;
+
+        Self::new_with_tokenizer(generate_config, tokenizer)
+    }
+
+    pub fn new_with_tokenizer(
+        generate_config: GenerateConfig,
+        tokenizer: TokenizerOption,
+    ) -> Result<GPT2Generator, RustBertError> {
+        let config_path = generate_config.config_resource.get_local_path()?;
+        let weights_path = generate_config.model_resource.get_local_path()?;
+        let device = generate_config.device;
+
+        generate_config.validate();
+        let mut var_store = nn::VarStore::new(device);
+
         let config = Gpt2Config::from_file(config_path);
         let model = GPT2LMHeadModel::new(&var_store.root(), &config);
         var_store.load(weights_path)?;
 
-        let bos_token_id = Some(tokenizer.convert_tokens_to_ids(&[Gpt2Vocab::bos_value()])[0]);
-        let eos_token_ids = Some(tokenizer.convert_tokens_to_ids(&[Gpt2Vocab::eos_value()]));
-        let pad_token_id = Some(tokenizer.convert_tokens_to_ids(&[Gpt2Vocab::eos_value()])[0]);
+        let bos_token_id = tokenizer.get_bos_id();
+        let eos_token_ids = tokenizer.get_eos_id().map(|id| vec![id]);
+        let pad_token_id = tokenizer.get_pad_id();
         let max_position_embeddings = config.n_positions;
         let is_encoder_decoder = false;
         let vocab_size = config.vocab_size;
@@ -735,17 +747,20 @@ impl PrivateLanguageGenerator<GPT2LMHeadModel, Gpt2Vocab, Gpt2Tokenizer> for GPT
     fn get_var_store(&self) -> &nn::VarStore {
         &self.var_store
     }
+    fn get_var_store_mut(&mut self) -> &mut nn::VarStore {
+        &mut self.var_store
+    }
     fn get_config(&self) -> &GenerateConfig {
         &self.generate_config
     }
-    fn get_bos_id(&self) -> &Option<i64> {
-        &self.bos_token_id
+    fn get_bos_id(&self) -> Option<i64> {
+        self.bos_token_id
     }
-    fn get_eos_ids(&self) -> &Option<Vec<i64>> {
-        &self.eos_token_ids
+    fn get_eos_ids(&self) -> Option<&Vec<i64>> {
+        self.eos_token_ids.as_ref()
     }
-    fn get_pad_id(&self) -> &Option<i64> {
-        &self.pad_token_id
+    fn get_pad_id(&self) -> Option<i64> {
+        self.pad_token_id
     }
     fn is_encoder_decoder(&self) -> bool {
         self.is_encoder_decoder

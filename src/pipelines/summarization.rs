@@ -62,18 +62,22 @@
 //! # ;
 //! ```
 
-use tch::{Device, Tensor};
+use tch::Device;
 
-use crate::bart::{
-    BartConfigResources, BartGenerator, BartMergesResources, BartModelResources, BartVocabResources,
-};
+use crate::bart::BartGenerator;
 use crate::common::error::RustBertError;
-use crate::common::resources::{RemoteResource, Resource};
 use crate::pegasus::PegasusConditionalGenerator;
 use crate::pipelines::common::ModelType;
 use crate::pipelines::generation_utils::{GenerateConfig, LanguageGenerator};
 use crate::prophetnet::ProphetNetConditionalGenerator;
+use crate::resources::ResourceProvider;
 use crate::t5::T5Generator;
+
+#[cfg(feature = "remote")]
+use crate::{
+    bart::{BartConfigResources, BartMergesResources, BartModelResources, BartVocabResources},
+    resources::RemoteResource,
+};
 
 /// # Configuration for text summarization
 /// Contains information regarding the model to load, mirrors the GenerationConfig, with a
@@ -82,13 +86,13 @@ pub struct SummarizationConfig {
     /// Model type
     pub model_type: ModelType,
     /// Model weights resource (default: pretrained BART model on CNN-DM)
-    pub model_resource: Resource,
+    pub model_resource: Box<dyn ResourceProvider + Send>,
     /// Config resource (default: pretrained BART model on CNN-DM)
-    pub config_resource: Resource,
+    pub config_resource: Box<dyn ResourceProvider + Send>,
     /// Vocab resource (default: pretrained BART model on CNN-DM)
-    pub vocab_resource: Resource,
+    pub vocab_resource: Box<dyn ResourceProvider + Send>,
     /// Merges resource (default: pretrained BART model on CNN-DM)
-    pub merges_resource: Resource,
+    pub merges_resource: Box<dyn ResourceProvider + Send>,
     /// Minimum sequence length (default: 0)
     pub min_length: i64,
     /// Maximum sequence length (default: 20)
@@ -127,45 +131,26 @@ impl SummarizationConfig {
     /// # Arguments
     ///
     /// * `model_type` - `ModelType` indicating the model type to load (must match with the actual data to be loaded!)
-    /// * model_resource - The `Resource` pointing to the model to load (e.g.  model.ot)
-    /// * config_resource - The `Resource' pointing to the model configuration to load (e.g. config.json)
-    /// * vocab_resource - The `Resource' pointing to the tokenizer's vocabulary to load (e.g.  vocab.txt/vocab.json)
-    /// * merges_resource - The `Resource`  pointing to the tokenizer's merge file or SentencePiece model to load (e.g.  merges.txt).
-    pub fn new(
+    /// * model_resource - The `ResourceProvider` pointing to the model to load (e.g.  model.ot)
+    /// * config_resource - The `ResourceProvider` pointing to the model configuration to load (e.g. config.json)
+    /// * vocab_resource - The `ResourceProvider` pointing to the tokenizer's vocabulary to load (e.g.  vocab.txt/vocab.json)
+    /// * merges_resource - The `ResourceProvider`  pointing to the tokenizer's merge file or SentencePiece model to load (e.g.  merges.txt).
+    pub fn new<R>(
         model_type: ModelType,
-        model_resource: Resource,
-        config_resource: Resource,
-        vocab_resource: Resource,
-        merges_resource: Resource,
-    ) -> SummarizationConfig {
+        model_resource: R,
+        config_resource: R,
+        vocab_resource: R,
+        merges_resource: R,
+    ) -> SummarizationConfig
+    where
+        R: ResourceProvider + Send + 'static,
+    {
         SummarizationConfig {
             model_type,
-            model_resource,
-            config_resource,
-            vocab_resource,
-            merges_resource,
-            device: Device::cuda_if_available(),
-            ..Default::default()
-        }
-    }
-}
-
-impl Default for SummarizationConfig {
-    fn default() -> SummarizationConfig {
-        SummarizationConfig {
-            model_type: ModelType::Bart,
-            model_resource: Resource::Remote(RemoteResource::from_pretrained(
-                BartModelResources::BART_CNN,
-            )),
-            config_resource: Resource::Remote(RemoteResource::from_pretrained(
-                BartConfigResources::BART_CNN,
-            )),
-            vocab_resource: Resource::Remote(RemoteResource::from_pretrained(
-                BartVocabResources::BART_CNN,
-            )),
-            merges_resource: Resource::Remote(RemoteResource::from_pretrained(
-                BartMergesResources::BART_CNN,
-            )),
+            model_resource: Box::new(model_resource),
+            config_resource: Box::new(config_resource),
+            vocab_resource: Box::new(vocab_resource),
+            merges_resource: Box::new(merges_resource),
             min_length: 56,
             max_length: 142,
             do_sample: false,
@@ -182,6 +167,19 @@ impl Default for SummarizationConfig {
             diversity_penalty: None,
             device: Device::cuda_if_available(),
         }
+    }
+}
+
+#[cfg(feature = "remote")]
+impl Default for SummarizationConfig {
+    fn default() -> SummarizationConfig {
+        SummarizationConfig::new(
+            ModelType::Bart,
+            RemoteResource::from_pretrained(BartModelResources::BART_CNN),
+            RemoteResource::from_pretrained(BartConfigResources::BART_CNN),
+            RemoteResource::from_pretrained(BartVocabResources::BART_CNN),
+            RemoteResource::from_pretrained(BartMergesResources::BART_CNN),
+        )
     }
 }
 
@@ -254,72 +252,28 @@ impl SummarizationOption {
     }
 
     /// Interface method to generate() of the particular models.
-    pub fn generate<'a, S>(
-        &self,
-        prompt_texts: Option<S>,
-        attention_mask: Option<Tensor>,
-    ) -> Vec<String>
+    pub fn generate<S>(&self, prompt_texts: Option<&[S]>) -> Vec<String>
     where
-        S: AsRef<[&'a str]>,
+        S: AsRef<str> + Sync,
     {
         match *self {
             Self::Bart(ref model) => model
-                .generate(
-                    prompt_texts,
-                    attention_mask,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    false,
-                )
+                .generate(prompt_texts, None)
                 .into_iter()
                 .map(|output| output.text)
                 .collect(),
             Self::T5(ref model) => model
-                .generate(
-                    prompt_texts,
-                    attention_mask,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    false,
-                )
+                .generate(prompt_texts, None)
                 .into_iter()
                 .map(|output| output.text)
                 .collect(),
             Self::ProphetNet(ref model) => model
-                .generate(
-                    prompt_texts,
-                    attention_mask,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    false,
-                )
+                .generate(prompt_texts, None)
                 .into_iter()
                 .map(|output| output.text)
                 .collect(),
             Self::Pegasus(ref model) => model
-                .generate(
-                    prompt_texts,
-                    attention_mask,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    false,
-                )
+                .generate(prompt_texts, None)
                 .into_iter()
                 .map(|output| output.text)
                 .collect(),
@@ -406,22 +360,18 @@ impl SummarizationModel {
     /// # }
     /// ```
     /// (New sample credits: [WikiNews](https://en.wikinews.org/wiki/Astronomers_find_water_vapour_in_atmosphere_of_exoplanet_K2-18b))
-    pub fn summarize<'a, S>(&self, texts: S) -> Vec<String>
+    pub fn summarize<S>(&self, texts: &[S]) -> Vec<String>
     where
-        S: AsRef<[&'a str]>,
+        S: AsRef<str> + Sync,
     {
         match &self.prefix {
-            None => self.model.generate(Some(texts), None),
+            None => self.model.generate(Some(texts)),
             Some(prefix) => {
                 let texts = texts
-                    .as_ref()
                     .iter()
-                    .map(|text| format!("{}{}", prefix, text))
+                    .map(|text| format!("{}{}", prefix, text.as_ref()))
                     .collect::<Vec<String>>();
-                self.model.generate(
-                    Some(texts.iter().map(|x| &**x).collect::<Vec<&str>>()),
-                    None,
-                )
+                self.model.generate(Some(&texts))
             }
         }
     }

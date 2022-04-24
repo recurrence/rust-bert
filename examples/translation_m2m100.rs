@@ -18,22 +18,14 @@ use rust_bert::m2m_100::{
 };
 use rust_bert::pipelines::common::ModelType;
 use rust_bert::pipelines::translation::{Language, TranslationConfig, TranslationModel};
-use rust_bert::resources::{RemoteResource, Resource};
+use rust_bert::resources::RemoteResource;
 use tch::Device;
 
 fn main() -> anyhow::Result<()> {
-    let model_resource = Resource::Remote(RemoteResource::from_pretrained(
-        M2M100ModelResources::M2M100_418M,
-    ));
-    let config_resource = Resource::Remote(RemoteResource::from_pretrained(
-        M2M100ConfigResources::M2M100_418M,
-    ));
-    let vocab_resource = Resource::Remote(RemoteResource::from_pretrained(
-        M2M100VocabResources::M2M100_418M,
-    ));
-    let merges_resource = Resource::Remote(RemoteResource::from_pretrained(
-        M2M100MergesResources::M2M100_418M,
-    ));
+    let model_resource = RemoteResource::from_pretrained(M2M100ModelResources::M2M100_418M);
+    let config_resource = RemoteResource::from_pretrained(M2M100ConfigResources::M2M100_418M);
+    let vocab_resource = RemoteResource::from_pretrained(M2M100VocabResources::M2M100_418M);
+    let merges_resource = RemoteResource::from_pretrained(M2M100MergesResources::M2M100_418M);
 
     let source_languages = M2M100SourceLanguages::M2M100_418M;
     let target_languages = M2M100TargetLanguages::M2M100_418M;
@@ -53,9 +45,9 @@ fn main() -> anyhow::Result<()> {
     let source_sentence = "This sentence will be translated in multiple languages.";
 
     let mut outputs = Vec::new();
-    outputs.extend(model.translate([source_sentence], Language::English, Language::French)?);
-    outputs.extend(model.translate([source_sentence], Language::English, Language::Spanish)?);
-    outputs.extend(model.translate([source_sentence], Language::English, Language::Hindi)?);
+    outputs.extend(model.translate(&[source_sentence], Language::English, Language::French)?);
+    outputs.extend(model.translate(&[source_sentence], Language::English, Language::Spanish)?);
+    outputs.extend(model.translate(&[source_sentence], Language::English, Language::Hindi)?);
 
     for sentence in outputs {
         println!("{}", sentence);

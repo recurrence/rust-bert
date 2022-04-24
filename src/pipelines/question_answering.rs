@@ -46,18 +46,18 @@
 use crate::albert::AlbertForQuestionAnswering;
 use crate::bert::BertForQuestionAnswering;
 use crate::common::error::RustBertError;
-use crate::common::resources::{RemoteResource, Resource};
-use crate::distilbert::{
-    DistilBertConfigResources, DistilBertForQuestionAnswering, DistilBertModelResources,
-    DistilBertVocabResources,
-};
+use crate::deberta::DebertaForQuestionAnswering;
+use crate::distilbert::DistilBertForQuestionAnswering;
+use crate::fnet::FNetForQuestionAnswering;
 use crate::longformer::LongformerForQuestionAnswering;
 use crate::mobilebert::MobileBertForQuestionAnswering;
 use crate::pipelines::common::{ConfigOption, ModelType, TokenizerOption};
 use crate::reformer::ReformerForQuestionAnswering;
+use crate::resources::ResourceProvider;
 use crate::roberta::RobertaForQuestionAnswering;
 use crate::xlnet::XLNetForQuestionAnswering;
 use rust_tokenizers::{Offset, TokenIdsWithOffsets, TokenizedInput};
+use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::cmp::min;
 use std::collections::HashMap;
@@ -67,6 +67,14 @@ use tch::kind::Kind::Float;
 use tch::nn::VarStore;
 use tch::{nn, no_grad, Device, Tensor};
 
+use crate::deberta_v2::DebertaV2ForQuestionAnswering;
+#[cfg(feature = "remote")]
+use crate::{
+    distilbert::{DistilBertConfigResources, DistilBertModelResources, DistilBertVocabResources},
+    resources::RemoteResource,
+};
+
+#[derive(Serialize, Deserialize)]
 /// # Input for Question Answering
 /// Includes a context (containing the answer) and question strings
 pub struct QaInput {
@@ -84,7 +92,7 @@ struct QaFeature {
     pub example_index: i64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 /// # Output for Question Answering
 pub struct Answer {
     /// Confidence score
@@ -120,13 +128,13 @@ fn remove_duplicates<T: PartialEq + Clone>(vector: &mut Vec<T>) -> &mut Vec<T> {
 /// Contains information regarding the model to load and device to place the model on.
 pub struct QuestionAnsweringConfig {
     /// Model weights resource (default: pretrained DistilBERT model on SQuAD)
-    pub model_resource: Resource,
+    pub model_resource: Box<dyn ResourceProvider + Send>,
     /// Config resource (default: pretrained DistilBERT model on SQuAD)
-    pub config_resource: Resource,
+    pub config_resource: Box<dyn ResourceProvider + Send>,
     /// Vocab resource (default: pretrained DistilBERT model on SQuAD)
-    pub vocab_resource: Resource,
+    pub vocab_resource: Box<dyn ResourceProvider + Send>,
     /// Merges resource (default: None)
-    pub merges_resource: Option<Resource>,
+    pub merges_resource: Option<Box<dyn ResourceProvider + Send>>,
     /// Device to place the model on (default: CUDA/GPU when available)
     pub device: Device,
     /// Model type
@@ -153,27 +161,30 @@ impl QuestionAnsweringConfig {
     /// # Arguments
     ///
     /// * `model_type` - `ModelType` indicating the model type to load (must match with the actual data to be loaded!)
-    /// * model_resource - The `Resource` pointing to the model to load (e.g.  model.ot)
-    /// * config_resource - The `Resource' pointing to the model configuration to load (e.g. config.json)
-    /// * vocab_resource - The `Resource' pointing to the tokenizer's vocabulary to load (e.g.  vocab.txt/vocab.json)
-    /// * merges_resource - An optional `Resource` tuple (`Option<Resource>`) pointing to the tokenizer's merge file to load (e.g.  merges.txt), needed only for Roberta.
-    /// * lower_case - A `bool' indicating whether the tokenizer should lower case all input (in case of a lower-cased model)
-    pub fn new(
+    /// * model_resource - The `ResourceProvider` pointing to the model to load (e.g.  model.ot)
+    /// * config_resource - The `ResourceProvider` pointing to the model configuration to load (e.g. config.json)
+    /// * vocab_resource - The `ResourceProvider` pointing to the tokenizer's vocabulary to load (e.g.  vocab.txt/vocab.json)
+    /// * merges_resource - An optional `ResourceProvider` pointing to the tokenizer's merge file to load (e.g.  merges.txt), needed only for Roberta.
+    /// * lower_case - A `bool` indicating whether the tokenizer should lower case all input (in case of a lower-cased model)
+    pub fn new<R>(
         model_type: ModelType,
-        model_resource: Resource,
-        config_resource: Resource,
-        vocab_resource: Resource,
-        merges_resource: Option<Resource>,
+        model_resource: R,
+        config_resource: R,
+        vocab_resource: R,
+        merges_resource: Option<R>,
         lower_case: bool,
         strip_accents: impl Into<Option<bool>>,
         add_prefix_space: impl Into<Option<bool>>,
-    ) -> QuestionAnsweringConfig {
+    ) -> QuestionAnsweringConfig
+    where
+        R: ResourceProvider + Send + 'static,
+    {
         QuestionAnsweringConfig {
             model_type,
-            model_resource,
-            config_resource,
-            vocab_resource,
-            merges_resource,
+            model_resource: Box::new(model_resource),
+            config_resource: Box::new(config_resource),
+            vocab_resource: Box::new(vocab_resource),
+            merges_resource: merges_resource.map(|r| Box::new(r) as Box<_>),
             lower_case,
             strip_accents: strip_accents.into(),
             add_prefix_space: add_prefix_space.into(),
@@ -190,21 +201,21 @@ impl QuestionAnsweringConfig {
     /// # Arguments
     ///
     /// * `model_type` - `ModelType` indicating the model type to load (must match with the actual data to be loaded!)
-    /// * model_resource - The `Resource` pointing to the model to load (e.g.  model.ot)
-    /// * config_resource - The `Resource' pointing to the model configuration to load (e.g. config.json)
-    /// * vocab_resource - The `Resource' pointing to the tokenizer's vocabulary to load (e.g.  vocab.txt/vocab.json)
-    /// * merges_resource - An optional `Resource` tuple (`Option<Resource>`) pointing to the tokenizer's merge file to load (e.g.  merges.txt), needed only for Roberta.
-    /// * lower_case - A `bool' indicating whether the tokenizer should lower case all input (in case of a lower-cased model)
+    /// * model_resource - The `ResourceProvider` pointing to the model to load (e.g.  model.ot)
+    /// * config_resource - The `ResourceProvider` pointing to the model configuration to load (e.g. config.json)
+    /// * vocab_resource - The `ResourceProvider` pointing to the tokenizer's vocabulary to load (e.g.  vocab.txt/vocab.json)
+    /// * merges_resource - An optional `ResourceProvider` pointing to the tokenizer's merge file to load (e.g.  merges.txt), needed only for Roberta.
+    /// * lower_case - A `bool` indicating whether the tokenizer should lower case all input (in case of a lower-cased model)
     /// * max_seq_length - Optional maximum sequence token length to limit memory footprint. If the context is too long, it will be processed with sliding windows. Defaults to 384.
     /// * max_query_length - Optional maximum question token length. Defaults to 64.
     /// * doc_stride - Optional stride to apply if a sliding window is required to process the input context. Represents the number of overlapping tokens between sliding windows. This should be lower than the max_seq_length minus max_query_length (otherwise there is a risk for the sliding window not to progress). Defaults to 128.
     /// * max_answer_length - Optional maximum token length for the extracted answer. Defaults to 15.
-    pub fn custom_new(
+    pub fn custom_new<R>(
         model_type: ModelType,
-        model_resource: Resource,
-        config_resource: Resource,
-        vocab_resource: Resource,
-        merges_resource: Option<Resource>,
+        model_resource: R,
+        config_resource: R,
+        vocab_resource: R,
+        merges_resource: Option<R>,
         lower_case: bool,
         strip_accents: impl Into<Option<bool>>,
         add_prefix_space: impl Into<Option<bool>>,
@@ -212,13 +223,16 @@ impl QuestionAnsweringConfig {
         doc_stride: impl Into<Option<usize>>,
         max_query_length: impl Into<Option<usize>>,
         max_answer_length: impl Into<Option<usize>>,
-    ) -> QuestionAnsweringConfig {
+    ) -> QuestionAnsweringConfig
+    where
+        R: ResourceProvider + Send + 'static,
+    {
         QuestionAnsweringConfig {
             model_type,
-            model_resource,
-            config_resource,
-            vocab_resource,
-            merges_resource,
+            model_resource: Box::new(model_resource),
+            config_resource: Box::new(config_resource),
+            vocab_resource: Box::new(vocab_resource),
+            merges_resource: merges_resource.map(|r| Box::new(r) as Box<_>),
             lower_case,
             strip_accents: strip_accents.into(),
             add_prefix_space: add_prefix_space.into(),
@@ -231,16 +245,17 @@ impl QuestionAnsweringConfig {
     }
 }
 
+#[cfg(feature = "remote")]
 impl Default for QuestionAnsweringConfig {
     fn default() -> QuestionAnsweringConfig {
         QuestionAnsweringConfig {
-            model_resource: Resource::Remote(RemoteResource::from_pretrained(
+            model_resource: Box::new(RemoteResource::from_pretrained(
                 DistilBertModelResources::DISTIL_BERT_SQUAD,
             )),
-            config_resource: Resource::Remote(RemoteResource::from_pretrained(
+            config_resource: Box::new(RemoteResource::from_pretrained(
                 DistilBertConfigResources::DISTIL_BERT_SQUAD,
             )),
-            vocab_resource: Resource::Remote(RemoteResource::from_pretrained(
+            vocab_resource: Box::new(RemoteResource::from_pretrained(
                 DistilBertVocabResources::DISTIL_BERT_SQUAD,
             )),
             merges_resource: None,
@@ -257,10 +272,15 @@ impl Default for QuestionAnsweringConfig {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 /// # Abstraction that holds one particular question answering model, for any of the supported models
 pub enum QuestionAnsweringOption {
     /// Bert for Question Answering
     Bert(BertForQuestionAnswering),
+    /// DeBERTa for Question Answering
+    Deberta(DebertaForQuestionAnswering),
+    /// DeBERTa V2 for Question Answering
+    DebertaV2(DebertaV2ForQuestionAnswering),
     /// DistilBert for Question Answering
     DistilBert(DistilBertForQuestionAnswering),
     /// MobileBert for Question Answering
@@ -277,6 +297,8 @@ pub enum QuestionAnsweringOption {
     Reformer(ReformerForQuestionAnswering),
     /// Longformer for Question Answering
     Longformer(LongformerForQuestionAnswering),
+    /// FNet for Question Answering
+    FNet(FNetForQuestionAnswering),
 }
 
 impl QuestionAnsweringOption {
@@ -305,6 +327,28 @@ impl QuestionAnsweringOption {
                 } else {
                     Err(RustBertError::InvalidConfigurationError(
                         "You can only supply a BertConfig for Bert!".to_string(),
+                    ))
+                }
+            }
+            ModelType::Deberta => {
+                if let ConfigOption::Deberta(config) = config {
+                    Ok(QuestionAnsweringOption::Deberta(
+                        DebertaForQuestionAnswering::new(p, config),
+                    ))
+                } else {
+                    Err(RustBertError::InvalidConfigurationError(
+                        "You can only supply a DebertaConfig for DeBERTa!".to_string(),
+                    ))
+                }
+            }
+            ModelType::DebertaV2 => {
+                if let ConfigOption::DebertaV2(config) = config {
+                    Ok(QuestionAnsweringOption::DebertaV2(
+                        DebertaV2ForQuestionAnswering::new(p, config),
+                    ))
+                } else {
+                    Err(RustBertError::InvalidConfigurationError(
+                        "You can only supply a DebertaV2Config for DeBERTa V2!".to_string(),
                     ))
                 }
             }
@@ -396,6 +440,17 @@ impl QuestionAnsweringOption {
                     ))
                 }
             }
+            ModelType::FNet => {
+                if let ConfigOption::FNet(config) = config {
+                    Ok(QuestionAnsweringOption::FNet(
+                        FNetForQuestionAnswering::new(p, config),
+                    ))
+                } else {
+                    Err(RustBertError::InvalidConfigurationError(
+                        "You can only supply a FNetConfig for FNet!".to_string(),
+                    ))
+                }
+            }
             _ => Err(RustBertError::InvalidConfigurationError(format!(
                 "QuestionAnswering not implemented for {:?}!",
                 model_type
@@ -407,6 +462,8 @@ impl QuestionAnsweringOption {
     pub fn model_type(&self) -> ModelType {
         match *self {
             Self::Bert(_) => ModelType::Bert,
+            Self::Deberta(_) => ModelType::Deberta,
+            Self::DebertaV2(_) => ModelType::DebertaV2,
             Self::Roberta(_) => ModelType::Roberta,
             Self::XLMRoberta(_) => ModelType::XLMRoberta,
             Self::DistilBert(_) => ModelType::DistilBert,
@@ -415,6 +472,7 @@ impl QuestionAnsweringOption {
             Self::XLNet(_) => ModelType::XLNet,
             Self::Reformer(_) => ModelType::Reformer,
             Self::Longformer(_) => ModelType::Longformer,
+            Self::FNet(_) => ModelType::FNet,
         }
     }
 
@@ -429,6 +487,18 @@ impl QuestionAnsweringOption {
         match *self {
             Self::Bert(ref model) => {
                 let outputs = model.forward_t(input_ids, mask, None, None, input_embeds, train);
+                (outputs.start_logits, outputs.end_logits)
+            }
+            Self::Deberta(ref model) => {
+                let outputs = model
+                    .forward_t(input_ids, mask, None, None, input_embeds, train)
+                    .expect("Error in Deberta forward_t");
+                (outputs.start_logits, outputs.end_logits)
+            }
+            Self::DebertaV2(ref model) => {
+                let outputs = model
+                    .forward_t(input_ids, mask, None, None, input_embeds, train)
+                    .expect("Error in Deberta V2 forward_t");
                 (outputs.start_logits, outputs.end_logits)
             }
             Self::DistilBert(ref model) => {
@@ -466,6 +536,12 @@ impl QuestionAnsweringOption {
                 let outputs = model
                     .forward_t(input_ids, mask, None, None, None, None, train)
                     .expect("Error in reformer forward pass");
+                (outputs.start_logits, outputs.end_logits)
+            }
+            Self::FNet(ref model) => {
+                let outputs = model
+                    .forward_t(input_ids, None, None, None, train)
+                    .expect("Error in fnet forward pass");
                 (outputs.start_logits, outputs.end_logits)
             }
         }
@@ -619,7 +695,7 @@ impl QuestionAnsweringModel {
         let mut features: Vec<QaFeature> = qa_inputs
             .iter()
             .enumerate()
-            .map(|(example_index, qa_example)| {
+            .flat_map(|(example_index, qa_example)| {
                 self.generate_features(
                     qa_example,
                     self.max_seq_len,
@@ -628,7 +704,6 @@ impl QuestionAnsweringModel {
                     example_index as i64,
                 )
             })
-            .flatten()
             .collect();
 
         let mut example_top_k_answers_map: HashMap<usize, Vec<Answer>> = HashMap::new();

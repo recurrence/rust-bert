@@ -2,11 +2,31 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+## Added
+- Addition of the DeBERTa language model and support for question answering, sequence and token classification
+- Addition of the DeBERTa v2/v3 language model and support for question answering, sequence and token classification
+- Addition of a `new_with_tokenizer` method allowing building language model generator with a custom tokenizer (or pairing a tokenizer that was not originally designed with the model, e.g. T5 tokenizer with GPT2 model).
+- (BREAKING) Addition of support for mT5 model, addition of new optional fields to T5Config
+- Addition of `token_scores` field when `output_scores` is set to `true` for generation, returning the score for each token generated
+
 ## Changed
-- Updated to `tch` 1.6.0 (libtorch 1.10)
+- (BREAKING) Updated `Resources`, moving `RemoteResource` and associated download utilities/dependencies behind a feature gate (enabled by default). Reworked the API for building and using resources. 
+- Upgraded to `torch` 1.11 (via `tch` 0.7.0)
+
+## Fixed
+- Fixed sinusoidal embeddings not being updated when loading a state dictionary (DistilBERT)
+
+## [0.17.0] - 2021-12-19
+## Changed
+- Updated to `tch` 0.6.1 (libtorch 1.10)
+- (BREAKING) Simplified the generics for multiple library traits taking as a rule `&[AsRef<str>]` or `&str` as inputs (no longer accepts owned types `Vec` and `String`)
 
 ## Added
 - (BREAKING) Support for `bad_word_ids` generation, allowing to ban a set of word ids for all model supporting text generation
+- Support for half-precision mode for all models (reducing memory footprint). A model can be converted to half-precision by calling the `half()` method on the `VarStore` is it currently stored in. Half-precision Torch kernels are not available for CPU (limited to CUDA devices)
+- (BREAKING) Extension of the generation options that can be provided at runtime (after a model has been instantiated with a `GenerateConfig`), allowing to update the generation options from one text generation to another with the same model. This feature is implemented at the `LanguageGenerator` trait level, the high-level `TextGeneration` pipeline API remains unchanged.
+- Addition of the FNet language model and support for sequence, token and multiple choice classification, question answering
+- Addition of a full entities' prediction method supporting the IOBES scheme (merging entities token such as <New> + <York> -> <New York>)
 
 ## [0.16.0] - 2021-08-24
 ## Added

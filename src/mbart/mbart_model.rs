@@ -12,7 +12,6 @@
 
 use crate::bart::BartModelOutput;
 use crate::common::dropout::Dropout;
-use crate::gpt2::{Gpt2ConfigResources, Gpt2ModelResources, Gpt2VocabResources};
 use crate::mbart::decoder::MBartDecoder;
 use crate::mbart::encoder::MBartEncoder;
 use crate::mbart::LayerState;
@@ -24,7 +23,6 @@ use crate::pipelines::generation_utils::{
     Cache, GenerateConfig, LMHeadModel, LMModelOutput, LanguageGenerator,
 };
 use crate::pipelines::translation::Language;
-use crate::resources::{RemoteResource, Resource};
 use crate::{Activation, Config, RustBertError};
 use rust_tokenizers::tokenizer::{MBart50Tokenizer, TruncationStrategy};
 use rust_tokenizers::vocab::{MBart50Vocab, Vocab};
@@ -839,44 +837,8 @@ impl MBartGenerator {
     /// # }
     /// ```
     pub fn new(generate_config: GenerateConfig) -> Result<MBartGenerator, RustBertError> {
-        //        The following allow keeping the same GenerationConfig Default for GPT, GPT2 and BART models
-        let model_resource = if generate_config.model_resource
-            == Resource::Remote(RemoteResource::from_pretrained(Gpt2ModelResources::GPT2))
-        {
-            Resource::Remote(RemoteResource::from_pretrained(
-                MBartModelResources::MBART50_MANY_TO_MANY,
-            ))
-        } else {
-            generate_config.model_resource.clone()
-        };
+        let vocab_path = generate_config.vocab_resource.get_local_path()?;
 
-        let config_resource = if generate_config.config_resource
-            == Resource::Remote(RemoteResource::from_pretrained(Gpt2ConfigResources::GPT2))
-        {
-            Resource::Remote(RemoteResource::from_pretrained(
-                MBartConfigResources::MBART50_MANY_TO_MANY,
-            ))
-        } else {
-            generate_config.config_resource.clone()
-        };
-
-        let vocab_resource = if generate_config.vocab_resource
-            == Resource::Remote(RemoteResource::from_pretrained(Gpt2VocabResources::GPT2))
-        {
-            Resource::Remote(RemoteResource::from_pretrained(
-                MBartVocabResources::MBART50_MANY_TO_MANY,
-            ))
-        } else {
-            generate_config.vocab_resource.clone()
-        };
-
-        let config_path = config_resource.get_local_path()?;
-        let vocab_path = vocab_resource.get_local_path()?;
-        let weights_path = model_resource.get_local_path()?;
-        let device = generate_config.device;
-
-        generate_config.validate();
-        let mut var_store = nn::VarStore::new(device);
         let tokenizer = TokenizerOption::from_file(
             ModelType::MBart,
             vocab_path.to_str().unwrap(),
@@ -885,11 +847,26 @@ impl MBartGenerator {
             None,
             None,
         )?;
+
+        Self::new_with_tokenizer(generate_config, tokenizer)
+    }
+
+    pub fn new_with_tokenizer(
+        generate_config: GenerateConfig,
+        tokenizer: TokenizerOption,
+    ) -> Result<MBartGenerator, RustBertError> {
+        let config_path = generate_config.config_resource.get_local_path()?;
+        let weights_path = generate_config.model_resource.get_local_path()?;
+        let device = generate_config.device;
+
+        generate_config.validate();
+        let mut var_store = nn::VarStore::new(device);
+
         let config = MBartConfig::from_file(config_path);
         let model = MBartForConditionalGeneration::new(&var_store.root(), &config);
         var_store.load(weights_path)?;
 
-        let bos_token_id = Some(0);
+        let bos_token_id = Some(config.bos_token_id.unwrap_or(0));
         let eos_token_ids = Some(match config.eos_token_id {
             Some(value) => vec![value],
             None => vec![2],
@@ -936,17 +913,20 @@ impl PrivateLanguageGenerator<MBartForConditionalGeneration, MBart50Vocab, MBart
     fn get_var_store(&self) -> &nn::VarStore {
         &self.var_store
     }
+    fn get_var_store_mut(&mut self) -> &mut nn::VarStore {
+        &mut self.var_store
+    }
     fn get_config(&self) -> &GenerateConfig {
         &self.generate_config
     }
-    fn get_bos_id(&self) -> &Option<i64> {
-        &self.bos_token_id
+    fn get_bos_id(&self) -> Option<i64> {
+        self.bos_token_id
     }
-    fn get_eos_ids(&self) -> &Option<Vec<i64>> {
-        &self.eos_token_ids
+    fn get_eos_ids(&self) -> Option<&Vec<i64>> {
+        self.eos_token_ids.as_ref()
     }
-    fn get_pad_id(&self) -> &Option<i64> {
-        &self.pad_token_id
+    fn get_pad_id(&self) -> Option<i64> {
+        self.pad_token_id
     }
     fn is_encoder_decoder(&self) -> bool {
         self.is_encoder_decoder
@@ -1008,17 +988,17 @@ impl PrivateLanguageGenerator<MBartForConditionalGeneration, MBart50Vocab, MBart
         }
     }
 
-    fn encode_prompt_text<'a, S>(
+    fn encode_prompt_text<S>(
         &self,
-        prompt_text: S,
+        prompt_text: &[S],
         max_len: i64,
         pad_token_id: Option<i64>,
     ) -> Tensor
     where
-        S: AsRef<[&'a str]>,
+        S: AsRef<str> + Sync,
     {
         let tokens = self._get_tokenizer().encode_list(
-            prompt_text.as_ref(),
+            prompt_text,
             max_len as usize,
             &TruncationStrategy::LongestFirst,
             0,
@@ -1089,4 +1069,32 @@ impl PrivateLanguageGenerator<MBartForConditionalGeneration, MBart50Vocab, MBart
 impl LanguageGenerator<MBartForConditionalGeneration, MBart50Vocab, MBart50Tokenizer>
     for MBartGenerator
 {
+}
+
+#[cfg(test)]
+mod test {
+    use tch::Device;
+
+    use crate::{
+        resources::{RemoteResource, ResourceProvider},
+        Config,
+    };
+
+    use super::*;
+
+    #[test]
+    #[ignore] // compilation is enough, no need to run
+    fn mbart_model_send() {
+        let config_resource = Box::new(RemoteResource::from_pretrained(
+            MBartConfigResources::MBART50_MANY_TO_MANY,
+        ));
+        let config_path = config_resource.get_local_path().expect("");
+
+        //    Set-up masked LM model
+        let device = Device::cuda_if_available();
+        let vs = tch::nn::VarStore::new(device);
+        let config = MBartConfig::from_file(config_path);
+
+        let _: Box<dyn Send> = Box::new(MBartModel::new(&vs.root(), &config));
+    }
 }

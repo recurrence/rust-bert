@@ -41,6 +41,9 @@ The tasks currently supported include:
 :-----:|:----:|:----:|:-----:|:----:|:-----:|:----:|:----:
 DistilBERT|✅|✅|✅| | | |✅| 
 MobileBERT|✅|✅|✅| | | |✅| 
+DeBERTa|✅|✅|✅| | | |✅| 
+DeBERTa (v2)|✅|✅|✅| | | |✅| 
+FNet|✅|✅|✅| | | |✅| 
 BERT|✅|✅|✅| | | |✅| 
 RoBERTa|✅|✅|✅| | | |✅| 
 GPT| | | |✅ | | | | 
@@ -71,8 +74,8 @@ This cache location defaults to `~/.cache/.rustbert`, but can be changed by sett
 
 ### Manual installation (recommended)
 
-1. Download `libtorch` from https://pytorch.org/get-started/locally/. This package requires `v1.9.0`: if this version is no longer available on the "get started" page,
-the file should be accessible by modifying the target link, for example `https://download.pytorch.org/libtorch/cu111/libtorch-shared-with-deps-1.9.0%2Bcu111.zip` for a Linux version with CUDA11.
+1. Download `libtorch` from https://pytorch.org/get-started/locally/. This package requires `v1.11.0`: if this version is no longer available on the "get started" page,
+the file should be accessible by modifying the target link, for example `https://download.pytorch.org/libtorch/cu113/libtorch-shared-with-deps-1.11.0%2Bcu113.zip` for a Linux version with CUDA11.
 2. Extract the library to a location of your choice
 3. Set the following environment variables
 ##### Linux:
@@ -90,7 +93,7 @@ $Env:Path += ";X:\path\to\libtorch\lib"
 ### Automatic installation
 
 Alternatively, you can let the `build` script automatically download the `libtorch` library for you.
-The CPU version of libtorch will be downloaded by default. To download a CUDA version, please set the environment variable `TORCH_CUDA_VERSION` to `cu111`.
+The CPU version of libtorch will be downloaded by default. To download a CUDA version, please set the environment variable `TORCH_CUDA_VERSION` to `cu113`.
 Note that the libtorch library is large (order of several GBs for the CUDA-enabled version) and the first build may therefore take several minutes to complete.
 
 ## Ready-to-use pipelines
@@ -145,7 +148,7 @@ model for predictions
 - French <-> German
 
 For languages not supported by the proposed pretrained Marian models, the user can leverage a M2M100 model supporting direct translation between 100 languages (without intermediate English translation)
-The full list of supported languages is available in the [crate documentation](docs.rs/rust-bert/0.15.1/rust_bert/pipelines/translation/enum.Language.html)
+The full list of supported languages is available in the [crate documentation](https://docs.rs/rust-bert/latest/rust_bert/pipelines/translation/enum.Language.html)
 
  ```rust
  use rust_bert::pipelines::translation::{Language, TranslationModelBuilder};
@@ -250,8 +253,12 @@ This may impact the results, it is recommended to submit prompts of similar leng
     let input_context_1 = "The dog";
     let input_context_2 = "The cat was";
 
-    let output = model.generate(Some(&[input_context_1, input_context_2]), 0, 30, true, false, 
-                                5, 1.2, 0, 0.9, 1.0, 1.0, 3, 3, None);
+    let generate_options = GenerateOptions {
+        max_length: 30,
+        ..Default::default()
+    };
+
+    let output = model.generate(Some(&[input_context_1, input_context_2]), generate_options);
 ```
 Example output:
 ```

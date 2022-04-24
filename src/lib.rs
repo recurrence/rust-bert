@@ -51,6 +51,9 @@
 //! :-----:|:----:|:----:|:-----:|:----:|:-----:|:----:|:----:
 //! DistilBERT|✅|✅|✅| | | |✅|
 //! MobileBERT|✅|✅|✅| | | |✅|
+//! DeBERTa|✅|✅|✅| | | |✅|
+//! DeBERTa (v2)|✅|✅|✅| | | |✅|
+//! FNet|✅|✅|✅| | | |✅|
 //! BERT|✅|✅|✅| | | |✅|
 //! RoBERTa|✅|✅|✅| | | |✅|
 //! GPT| | | |✅ | | | |
@@ -73,7 +76,7 @@
 //! # Getting started
 //!
 //! This library relies on the [tch](https://github.com/LaurentMazare/tch-rs) crate for bindings to the C++ Libtorch API.
-//! The libtorch library is required can be downloaded either automatically or manually. The following provides a reference on how to set-up yoru environment
+//! The libtorch library is required can be downloaded either automatically or manually. The following provides a reference on how to set-up your environment
 //! to use these bindings, please refer to the [tch](https://github.com/LaurentMazare/tch-rs) for detailed information or support.
 //!
 //! Furthermore, this library relies on a cache folder for downloading pre-trained models.
@@ -81,8 +84,8 @@
 //!
 //! ### Manual installation (recommended)
 //!
-//! 1. Download `libtorch` from <https://pytorch.org/get-started/locally/>. This package requires `v1.8.1`: if this version is no longer available on the "get started" page,
-//! the file should be accessible by modifying the target link, for example `https://download.pytorch.org/libtorch/cu111/libtorch-shared-with-deps-1.8.1%2Bcu111.zip` for a Linux version with CUDA11.
+//! 1. Download `libtorch` from <https://pytorch.org/get-started/locally/>. This package requires `v1.10.0`: if this version is no longer available on the "get started" page,
+//! the file should be accessible by modifying the target link, for example `https://download.pytorch.org/libtorch/cu111/libtorch-shared-with-deps-1.10.0%2Bcu111.zip` for a Linux version with CUDA11.
 //! 2. Extract the library to a location of your choice
 //! 3. Set the following environment variables
 //! ##### Linux:
@@ -557,6 +560,13 @@
 //! `python ./utils/convert_model.py path/to/pytorch_model.bin` where `path/to/pytorch_model.bin` is the location of the original Pytorch weights.
 //!
 //!
+//! ## Async execution
+//!
+//! Creating any of the models in async context will cause panics! Running extensive calculations like running predictions in a future should be avoided, too ([see here](https://docs.rs/tokio/latest/tokio/#cpu-bound-tasks-and-blocking-code)).
+//!
+//! It is recommended to spawn a separate thread for the models. The `async-sentiment` example displays a possible solution you could use to integrate models into async code.
+//!
+//!
 //! ## Citation
 //!
 //! If you use `rust-bert` for your work, please cite [End-to-end NLP Pipelines in Rust](https://www.aclweb.org/anthology/2020.nlposs-1.4/):
@@ -577,12 +587,18 @@
 //! Thank you to [Hugging Face](https://huggingface.co) for hosting a set of weights compatible with this Rust library.
 //! The list of ready-to-use pretrained models is listed at [https://huggingface.co/models?filter=rust](https://huggingface.co/models?filter=rust).
 
+// These are used abundantly in this code
+#![allow(clippy::assign_op_pattern, clippy::upper_case_acronyms)]
+
 pub mod albert;
 pub mod bart;
 pub mod bert;
 mod common;
+pub mod deberta;
+pub mod deberta_v2;
 pub mod distilbert;
 pub mod electra;
+pub mod fnet;
 pub mod gpt2;
 pub mod gpt_neo;
 pub mod longformer;

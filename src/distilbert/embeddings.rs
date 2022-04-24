@@ -16,10 +16,17 @@ use crate::distilbert::distilbert_model::DistilBertConfig;
 use crate::RustBertError;
 use std::borrow::Borrow;
 use tch::kind::Kind::Float;
-use tch::nn::{embedding, EmbeddingConfig};
+use tch::nn::{embedding, EmbeddingConfig, Init, VarStore};
 use tch::{nn, Device, Kind, Tensor};
 
-fn create_sinusoidal_embeddings(config: &DistilBertConfig, device: Device) -> nn::Embedding {
+fn create_sinusoidal_embeddings<'p, P>(
+    config: &DistilBertConfig,
+    p: P,
+    device: Device,
+) -> nn::Embedding
+where
+    P: Borrow<nn::Path<'p>>,
+{
     let mut sinusoidal_embedding: Vec<Tensor> =
         Vec::with_capacity(config.max_position_embeddings as usize);
     for pos in 0..config.max_position_embeddings {
@@ -27,11 +34,11 @@ fn create_sinusoidal_embeddings(config: &DistilBertConfig, device: Device) -> nn
         for j in 0..config.dim {
             if j % 2 == 0 {
                 temp_vec.push(
-                    (pos as f64 / 10000f64.powf((2 * (j / 2)) as f64 / config.dim as f64)).sin(),
+                    (pos as f64 / 10000_f64.powf((2 * (j / 2)) as f64 / config.dim as f64)).sin(),
                 );
             } else {
                 temp_vec.push(
-                    (pos as f64 / 10000f64.powf((2 * (j / 2)) as f64 / config.dim as f64)).cos(),
+                    (pos as f64 / 10000_f64.powf((2 * (j / 2)) as f64 / config.dim as f64)).cos(),
                 );
             }
         }
@@ -42,18 +49,28 @@ fn create_sinusoidal_embeddings(config: &DistilBertConfig, device: Device) -> nn
         .to_kind(Float)
         .to_device(device);
 
+    let p = p.borrow();
+    let mut updated_weights = p.var(
+        "weight",
+        &[config.max_position_embeddings, config.dim],
+        Init::Const(0.),
+    );
+    tch::no_grad(|| {
+        updated_weights.copy_(&sinusoidal_embedding);
+    });
+
     let embedding_config = EmbeddingConfig {
         padding_idx: 0,
         ..Default::default()
     };
     let mut embeddings = embedding(
-        &nn::VarStore::new(device).root(),
+        VarStore::new(Device::Cpu).root(),
         config.max_position_embeddings,
         config.dim,
         embedding_config,
     );
 
-    embeddings.ws = sinusoidal_embedding;
+    embeddings.ws = updated_weights;
     embeddings
 }
 
@@ -90,8 +107,7 @@ impl DistilBertEmbedding {
                 config.dim,
                 embedding_config,
             ),
-
-            true => create_sinusoidal_embeddings(config, p.device()),
+            true => create_sinusoidal_embeddings(config, p / "position_embeddings", p.device()),
         };
         let layer_norm_config = nn::LayerNormConfig {
             eps: 1e-12,

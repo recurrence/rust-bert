@@ -18,22 +18,16 @@ use rust_bert::mbart::{
 };
 use rust_bert::pipelines::common::ModelType;
 use rust_bert::pipelines::translation::{Language, TranslationConfig, TranslationModel};
-use rust_bert::resources::{RemoteResource, Resource};
+use rust_bert::resources::RemoteResource;
 use tch::Device;
 
 fn main() -> anyhow::Result<()> {
-    let model_resource = Resource::Remote(RemoteResource::from_pretrained(
-        MBartModelResources::MBART50_MANY_TO_MANY,
-    ));
-    let config_resource = Resource::Remote(RemoteResource::from_pretrained(
-        MBartConfigResources::MBART50_MANY_TO_MANY,
-    ));
-    let vocab_resource = Resource::Remote(RemoteResource::from_pretrained(
-        MBartVocabResources::MBART50_MANY_TO_MANY,
-    ));
-    let merges_resource = Resource::Remote(RemoteResource::from_pretrained(
-        MBartVocabResources::MBART50_MANY_TO_MANY,
-    ));
+    let model_resource = RemoteResource::from_pretrained(MBartModelResources::MBART50_MANY_TO_MANY);
+    let config_resource =
+        RemoteResource::from_pretrained(MBartConfigResources::MBART50_MANY_TO_MANY);
+    let vocab_resource = RemoteResource::from_pretrained(MBartVocabResources::MBART50_MANY_TO_MANY);
+    let merges_resource =
+        RemoteResource::from_pretrained(MBartVocabResources::MBART50_MANY_TO_MANY);
 
     let source_languages = MBartSourceLanguages::MBART50_MANY_TO_MANY;
     let target_languages = MBartTargetLanguages::MBART50_MANY_TO_MANY;
@@ -53,9 +47,9 @@ fn main() -> anyhow::Result<()> {
     let source_sentence = "This sentence will be translated in multiple languages.";
 
     let mut outputs = Vec::new();
-    outputs.extend(model.translate([source_sentence], Language::English, Language::French)?);
-    outputs.extend(model.translate([source_sentence], Language::English, Language::Spanish)?);
-    outputs.extend(model.translate([source_sentence], Language::English, Language::Hindi)?);
+    outputs.extend(model.translate(&[source_sentence], Language::English, Language::French)?);
+    outputs.extend(model.translate(&[source_sentence], Language::English, Language::Spanish)?);
+    outputs.extend(model.translate(&[source_sentence], Language::English, Language::Hindi)?);
 
     for sentence in outputs {
         println!("{}", sentence);

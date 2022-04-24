@@ -82,17 +82,22 @@
 //! To run the pipeline for another language, change the POSModel configuration from its default (see the NER pipeline for an illustration).
 
 use crate::common::error::RustBertError;
-use crate::mobilebert::{
-    MobileBertConfigResources, MobileBertModelResources, MobileBertVocabResources,
-};
-use crate::pipelines::common::ModelType;
-use crate::pipelines::token_classification::{
-    LabelAggregationOption, TokenClassificationConfig, TokenClassificationModel,
-};
-use crate::resources::{RemoteResource, Resource};
-use tch::Device;
+use crate::pipelines::token_classification::{TokenClassificationConfig, TokenClassificationModel};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
+#[cfg(feature = "remote")]
+use {
+    crate::{
+        mobilebert::{
+            MobileBertConfigResources, MobileBertModelResources, MobileBertVocabResources,
+        },
+        pipelines::{common::ModelType, token_classification::LabelAggregationOption},
+        resources::RemoteResource,
+    },
+    tch::Device,
+};
+
+#[derive(Debug, Serialize, Deserialize)]
 /// # Part of Speech tag
 pub struct POSTag {
     /// String representation of the word
@@ -108,19 +113,20 @@ pub struct POSConfig {
     token_classification_config: TokenClassificationConfig,
 }
 
+#[cfg(feature = "remote")]
 impl Default for POSConfig {
     /// Provides a Part of speech tagging model (English)
     fn default() -> POSConfig {
         POSConfig {
             token_classification_config: TokenClassificationConfig {
                 model_type: ModelType::MobileBert,
-                model_resource: Resource::Remote(RemoteResource::from_pretrained(
+                model_resource: Box::new(RemoteResource::from_pretrained(
                     MobileBertModelResources::MOBILEBERT_ENGLISH_POS,
                 )),
-                config_resource: Resource::Remote(RemoteResource::from_pretrained(
+                config_resource: Box::new(RemoteResource::from_pretrained(
                     MobileBertConfigResources::MOBILEBERT_ENGLISH_POS,
                 )),
-                vocab_resource: Resource::Remote(RemoteResource::from_pretrained(
+                vocab_resource: Box::new(RemoteResource::from_pretrained(
                     MobileBertVocabResources::MOBILEBERT_ENGLISH_POS,
                 )),
                 merges_resource: None,
@@ -195,9 +201,9 @@ impl POSModel {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn predict<'a, S>(&self, input: S) -> Vec<Vec<POSTag>>
+    pub fn predict<S>(&self, input: &[S]) -> Vec<Vec<POSTag>>
     where
-        S: AsRef<[&'a str]>,
+        S: AsRef<str>,
     {
         self.token_classification_model
             .predict(input, true, false)

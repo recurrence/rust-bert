@@ -42,9 +42,6 @@ impl LayerState {
 
 #[derive(Debug)]
 pub struct XLNetRelativeAttention {
-    num_attention_heads: i64,
-    attention_head_size: i64,
-    hidden_size: i64,
     dropout: Dropout,
     output_attentions: bool,
     query: Tensor,
@@ -135,9 +132,6 @@ impl XLNetRelativeAttention {
         let scale = 1f64 / ((config.d_head as f64).powf(0.5f64));
 
         XLNetRelativeAttention {
-            num_attention_heads: config.n_head,
-            attention_head_size: config.d_head,
-            hidden_size: config.d_model,
             dropout,
             output_attentions,
             query,
@@ -186,15 +180,17 @@ impl XLNetRelativeAttention {
                 );
                 Tensor::einsum("ijbs,ibns->bnij", &[seg_mat, &ef])
             }
-            None => Tensor::zeros(&[1], (Kind::Float, ac.device())),
+            None => Tensor::zeros(&[1], (ac.kind(), ac.device())),
         };
         let mut attention_score = (ac + bd + ef) * self.scale;
         if let Some(value) = attention_mask {
-            attention_score = attention_score - value.permute(&[2, 3, 0, 1]) * 1e30;
+            let target_kind = attention_score.kind();
+            attention_score =
+                (attention_score - value.permute(&[2, 3, 0, 1]) * 1e30).to_kind(target_kind);
         };
 
         let attention_probas = attention_score
-            .softmax(3, Kind::Float)
+            .softmax(3, attention_score.kind())
             .apply_t(&self.dropout, train);
 
         let attention_vector = Tensor::einsum("bnij,jbnd->ibnd", &[&attention_probas, v_head_h]);

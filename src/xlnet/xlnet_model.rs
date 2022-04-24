@@ -285,6 +285,7 @@ impl XLNetModel {
         q_len: i64,
         k_len: i64,
         batch_size: Option<i64>,
+        kind: Kind,
         device: Device,
     ) -> Tensor {
         let frequency_sequence =
@@ -303,7 +304,7 @@ impl XLNetModel {
             }
             _ => {}
         }
-        if self.bi_data {
+        let position_embeddings = if self.bi_data {
             let mut backward_positions_sequence =
                 Tensor::arange_start(-begin, -end, (Kind::Float, device));
             match self.clamp_len {
@@ -324,7 +325,8 @@ impl XLNetModel {
             )
         } else {
             self.positional_embedding(&forward_positions_sequence, &inverse_frequency, batch_size)
-        }
+        };
+        position_embeddings.to_kind(kind)
     }
 
     /// Forward pass through the model
@@ -424,9 +426,18 @@ impl XLNetModel {
             token_type_ids.map(|token_type_ids| token_type_ids.transpose(0, 1).contiguous());
         let attention_mask =
             attention_mask.map(|attention_mask| attention_mask.transpose(0, 1).contiguous());
-        let perm_mask = perm_mask.map(|perm_mask| perm_mask.permute(&[1, 2, 0]).contiguous());
-        let target_mapping =
-            target_mapping.map(|target_mapping| target_mapping.permute(&[1, 2, 0]).contiguous());
+        let perm_mask = perm_mask.map(|perm_mask| {
+            perm_mask
+                .to_kind(word_emb_k.kind())
+                .permute(&[1, 2, 0])
+                .contiguous()
+        });
+        let target_mapping = target_mapping.map(|target_mapping| {
+            target_mapping
+                .to_kind(word_emb_k.kind())
+                .permute(&[1, 2, 0])
+                .contiguous()
+        });
 
         let m_len = if let Some(mems) = &old_layer_states {
             if let Some(mem_0) = &mems[0] {
@@ -513,13 +524,19 @@ impl XLNetModel {
                 .unsqueeze(-1)
                 .ne_tensor(&cat_ids.unsqueeze(0))
                 .to_kind(Kind::Int64);
-            Some(seg_mat.one_hot(2).to_kind(Kind::Float))
+            Some(seg_mat.one_hot(2).to_kind(output_h.kind()))
         } else {
             None
         };
 
         let pos_emb = self
-            .relative_positional_encoding(q_len, k_len, Some(batch_size), output_h.device())
+            .relative_positional_encoding(
+                q_len,
+                k_len,
+                Some(batch_size),
+                output_h.kind(),
+                output_h.device(),
+            )
             .apply_t(&self.dropout, train);
 
         let mut all_hidden_states: Option<Vec<(Tensor, Option<Tensor>)>> =
@@ -1565,13 +1582,8 @@ impl XLNetGenerator {
     /// # }
     /// ```
     pub fn new(generate_config: GenerateConfig) -> Result<XLNetGenerator, RustBertError> {
-        let config_path = generate_config.config_resource.get_local_path()?;
         let vocab_path = generate_config.vocab_resource.get_local_path()?;
-        let weights_path = generate_config.model_resource.get_local_path()?;
-        let device = generate_config.device;
 
-        generate_config.validate();
-        let mut var_store = nn::VarStore::new(device);
         let tokenizer = TokenizerOption::from_file(
             ModelType::XLNet,
             vocab_path.to_str().unwrap(),
@@ -1580,6 +1592,20 @@ impl XLNetGenerator {
             true,
             None,
         )?;
+
+        Self::new_with_tokenizer(generate_config, tokenizer)
+    }
+
+    pub fn new_with_tokenizer(
+        generate_config: GenerateConfig,
+        tokenizer: TokenizerOption,
+    ) -> Result<XLNetGenerator, RustBertError> {
+        let config_path = generate_config.config_resource.get_local_path()?;
+        let weights_path = generate_config.model_resource.get_local_path()?;
+        let device = generate_config.device;
+
+        generate_config.validate();
+        let mut var_store = nn::VarStore::new(device);
 
         let config = XLNetConfig::from_file(config_path);
         let model = XLNetLMHeadModel::new(&var_store.root(), &config);
@@ -1620,17 +1646,20 @@ impl PrivateLanguageGenerator<XLNetLMHeadModel, XLNetVocab, XLNetTokenizer> for 
     fn get_var_store(&self) -> &nn::VarStore {
         &self.var_store
     }
+    fn get_var_store_mut(&mut self) -> &mut nn::VarStore {
+        &mut self.var_store
+    }
     fn get_config(&self) -> &GenerateConfig {
         &self.generate_config
     }
-    fn get_bos_id(&self) -> &Option<i64> {
-        &self.bos_token_id
+    fn get_bos_id(&self) -> Option<i64> {
+        self.bos_token_id
     }
-    fn get_eos_ids(&self) -> &Option<Vec<i64>> {
-        &self.eos_token_ids
+    fn get_eos_ids(&self) -> Option<&Vec<i64>> {
+        self.eos_token_ids.as_ref()
     }
-    fn get_pad_id(&self) -> &Option<i64> {
-        &self.pad_token_id
+    fn get_pad_id(&self) -> Option<i64> {
+        self.pad_token_id
     }
     fn is_encoder_decoder(&self) -> bool {
         self.is_encoder_decoder
@@ -1692,7 +1721,6 @@ impl PrivateLanguageGenerator<XLNetLMHeadModel, XLNetVocab, XLNetTokenizer> for 
         match past {
             Cache::XLNetCache(past) => {
                 if let Some(past) = past {
-                    // let new_past = Vec::with_capacity(past.len());
                     let past = if let Some(first_past) = &past[0] {
                         let past_len = first_past.prev_content.size()[0];
                         past.iter()

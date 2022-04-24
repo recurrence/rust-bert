@@ -16,22 +16,21 @@ extern crate anyhow;
 
 use rust_bert::pipelines::common::ModelType;
 use rust_bert::pipelines::text_generation::{TextGenerationConfig, TextGenerationModel};
-use rust_bert::resources::{RemoteResource, Resource};
+use rust_bert::resources::RemoteResource;
 use rust_bert::xlnet::{XLNetConfigResources, XLNetModelResources, XLNetVocabResources};
 
 fn main() -> anyhow::Result<()> {
-    //    Set-up model
     //    Resources paths
-    let config_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let config_resource = Box::new(RemoteResource::from_pretrained(
         XLNetConfigResources::XLNET_BASE_CASED,
     ));
-    let vocab_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let vocab_resource = Box::new(RemoteResource::from_pretrained(
         XLNetVocabResources::XLNET_BASE_CASED,
     ));
-    let merges_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let merges_resource = Box::new(RemoteResource::from_pretrained(
         XLNetVocabResources::XLNET_BASE_CASED,
     ));
-    let model_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let model_resource = Box::new(RemoteResource::from_pretrained(
         XLNetModelResources::XLNET_BASE_CASED,
     ));
 
@@ -42,7 +41,7 @@ fn main() -> anyhow::Result<()> {
         vocab_resource,
         merges_resource,
         max_length: 32,
-        do_sample: true,
+        do_sample: false,
         num_beams: 3,
         temperature: 1.0,
         num_return_sequences: 1,

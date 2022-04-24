@@ -6,7 +6,7 @@ use rust_bert::openai_gpt::{
 use rust_bert::pipelines::common::ModelType;
 use rust_bert::pipelines::generation_utils::{Cache, LMHeadModel};
 use rust_bert::pipelines::text_generation::{TextGenerationConfig, TextGenerationModel};
-use rust_bert::resources::{RemoteResource, Resource};
+use rust_bert::resources::{RemoteResource, ResourceProvider};
 use rust_bert::Config;
 use rust_tokenizers::tokenizer::{OpenAiGptTokenizer, Tokenizer, TruncationStrategy};
 use tch::{nn, Device, Tensor};
@@ -14,16 +14,16 @@ use tch::{nn, Device, Tensor};
 #[test]
 fn openai_gpt_lm_model() -> anyhow::Result<()> {
     //    Resources paths
-    let config_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let config_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptConfigResources::GPT,
     ));
-    let vocab_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let vocab_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptVocabResources::GPT,
     ));
-    let merges_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let merges_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptMergesResources::GPT,
     ));
-    let weights_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let weights_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptModelResources::GPT,
     ));
     let config_path = config_resource.get_local_path()?;
@@ -83,7 +83,7 @@ fn openai_gpt_lm_model() -> anyhow::Result<()> {
         .get(-1)
         .argmax(-1, true)
         .int64_value(&[0]);
-    let next_word = tokenizer.decode(vec![next_word_id], true, true);
+    let next_word = tokenizer.decode(&[next_word_id], true, true);
 
     assert_eq!(model_output.lm_logits.size(), vec!(1, 6, 40478));
     assert!(
@@ -104,16 +104,16 @@ fn openai_gpt_lm_model() -> anyhow::Result<()> {
 #[test]
 fn openai_gpt_generation_greedy() -> anyhow::Result<()> {
     //    Resources paths
-    let config_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let config_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptConfigResources::GPT,
     ));
-    let vocab_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let vocab_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptVocabResources::GPT,
     ));
-    let merges_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let merges_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptMergesResources::GPT,
     ));
-    let model_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let model_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptModelResources::GPT,
     ));
 
@@ -146,16 +146,16 @@ fn openai_gpt_generation_greedy() -> anyhow::Result<()> {
 #[test]
 fn openai_gpt_generation_beam_search() -> anyhow::Result<()> {
     //    Resources paths
-    let config_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let config_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptConfigResources::GPT,
     ));
-    let vocab_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let vocab_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptVocabResources::GPT,
     ));
-    let merges_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let merges_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptMergesResources::GPT,
     ));
-    let model_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let model_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptModelResources::GPT,
     ));
 
@@ -199,16 +199,16 @@ fn openai_gpt_generation_beam_search() -> anyhow::Result<()> {
 #[test]
 fn openai_gpt_generation_beam_search_multiple_prompts_without_padding() -> anyhow::Result<()> {
     //    Resources paths
-    let config_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let config_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptConfigResources::GPT,
     ));
-    let vocab_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let vocab_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptVocabResources::GPT,
     ));
-    let merges_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let merges_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptMergesResources::GPT,
     ));
-    let model_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let model_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptModelResources::GPT,
     ));
 
@@ -268,16 +268,16 @@ fn openai_gpt_generation_beam_search_multiple_prompts_without_padding() -> anyho
 #[test]
 fn openai_gpt_generation_beam_search_multiple_prompts_with_padding() -> anyhow::Result<()> {
     //    Resources paths
-    let config_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let config_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptConfigResources::GPT,
     ));
-    let vocab_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let vocab_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptVocabResources::GPT,
     ));
-    let merges_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let merges_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptMergesResources::GPT,
     ));
-    let model_resource = Resource::Remote(RemoteResource::from_pretrained(
+    let model_resource = Box::new(RemoteResource::from_pretrained(
         OpenAiGptModelResources::GPT,
     ));
 
